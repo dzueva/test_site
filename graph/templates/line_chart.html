@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Test Graph</title>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.29.1/moment.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@2.9.4/dist/Chart.min.js"></script>
+
+    <script src="//ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"></script>
+    <script src="http://ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"></script>
+    <style>
+    canvas {
+      -moz-user-select: none;
+      -webkit-user-select: none;
+      -ms-user-select: none;
+    }
+  </style>
+</head>
+<body>
+
+    <div id="app">
+        <div class="container">
+            <div class="input-group">
+                <select id="time" onchange="timeChange(this.options[this.selectedIndex].value)">
+                    <option value="10min" selected>Последние 10 минут</option>
+                    <option value="1h">Последний час</option>
+                    <option value="2h">Последние 2 часа</option>
+                    <option value="day">Последние 24 часа</option>
+                    <option value="week">Последняя неделя</option>
+                    <option value="month">Последний месяц</option>
+                    <option value="calendar">Другое</option>
+                </select>
+                <input type="date" id="datepicker" onchange="date(event);" hidden/>
+                <input type="time" id="timepicker" onchange="date(event);" hidden/>
+                <script>
+                    function date(e) {
+                        $.ajaxSetup({
+                                data: {csrfmiddlewaretoken: '{{ csrf_token }}' },
+                            });
+                            $.ajax({
+                                type: "POST",
+                                url: "{% url 'time' %}",
+                                data: (e.target.id == 'datepicker') ? {'new_time': e.target.value} : {'calen_time': e.target.value},
+                                dataType: 'json',
+                                success: function(result) {
+                                    console.log(result);
+                                    updateData(true);
+                                },
+                                error: function(result) {
+                                    console.log(result);
+                                }
+                            });
+                    };
+                </script>
+            </div>
+            <div class="app__chart app-chart">
+                <div id="fams" style="display: flex; justify-content: space-between;">
+                    {% for family in families %}
+                        <p>{{ family }}</p>
+                    {% endfor %}
+                </div>
+                <div>
+                  <canvas id="canvas"></canvas>
+                </div>
+                <script>
+
+                    function chartFuncs(chartData, yAxLabels, isTime){
+                        chartData['options']['animation']['onComplete'] =
+                            function(){
+                                if (isTime){console.log('chart is updated!');};
+                            }
+                        var check = [];
+                        chartData['options']['scales']['yAxes'][0]['ticks']['callback'] =
+                             function(value, index, values) {
+                                if ((yAxLabels[value] !== undefined) && !(check.includes(yAxLabels[value]['user_id']))) {
+                                    op_id = yAxLabels[value]['user_id'];
+                                    check.push(op_id);
+
+                                    let sessions = 0;
+                                    for (const [key, value] of Object.entries(yAxLabels)) {
+                                        if (value['user_id'] == op_id) {sessions += 1;};
+                                    };
+
+                                    return [op_id, ('сессий: ' + sessions)];
+                                };
+                             };
+                        chartData['options']['tooltips']['callbacks']['label'] =
+                            function(tooltipItem){
+                                return tooltipItem.xLabel;
+                            };
+                        chartData['options']['tooltips']['callbacks']['title'] =
+                            function(tooltipItem){
+                                var text = ['Оператор: ' + yAxLabels[tooltipItem[0].value]['user_id'], 'Серийный номер: ' + yAxLabels[tooltipItem[0].value]['device'], 'Семейство: ' + yAxLabels[tooltipItem[0].value]['device_family'], 'message: ' + yAxLabels[tooltipItem[0].value]['message']]
+                                return text;
+                            };
+                    };
+
+                    var info = {{ info|safe }};
+                    var yLabels = {{ yLabels|safe }};
+                    chartFuncs(info, yLabels, false);
+                    var ctx = document.getElementById('canvas').getContext('2d');
+                    var aqChart = new Chart(ctx, info);
+
+                    function updateData(isTime = false){
+                        $.ajax({
+                            type: "GET",
+                            url: "{% url 'chart_upd' %}",
+                            success: function(data) {
+                                // updating chart
+                                var chartData = data.info;
+                                var labels = data.yLabels;
+                                chartFuncs(chartData, labels, isTime);
+                                aqChart.destroy()
+                                aqChart = new Chart(ctx, chartData);
+
+                                // updating families div
+                                var families = data.families;
+                                document.getElementById("fams").innerHTML = "";
+                                const div_f = document.getElementById("fams");
+                                families.forEach(family => {
+                                    const p = document.createElement("p");
+                                    p.appendChild(document.createTextNode(family));
+                                    div_f.appendChild(p);
+                                });
+                            }
+                        });
+                    };
+                    setInterval(updateData, 30000);     //every 30s
+
+                    // page reload function
+                    reload = function() {
+                        if (document.getElementById("time").options[document.getElementById("time").selectedIndex].text == "Другое") {
+                            document.getElementById("datepicker").hidden = false;
+                            document.getElementById("timepicker").hidden = false;
+                        };
+                    };
+                    window.onload = reload;
+
+                    // select time onchange
+                    function timeChange(newTime) {
+                        if (newTime != 'calendar') {
+                            document.getElementById("datepicker").hidden = true;
+                            document.getElementById("timepicker").hidden = true;
+                            $.ajaxSetup({
+                                data: {csrfmiddlewaretoken: '{{ csrf_token }}' },
+                            });
+                            $.ajax({
+                                type: "POST",
+                                url: "{% url 'time' %}",
+                                data: {'new_time': newTime},
+                                dataType: 'json',
+                                success: function(result) {
+                                    console.log(result);
+                                    console.log('chart is updating...');
+                                    updateData(true);
+                                },
+                                error: function(result) {
+                                    console.log(result.status);
+                                }
+                            });
+                        }
+                        else {
+                            Date.prototype.toDateInputValue = (function() {
+                                var local = new Date(this);
+                                local.setMinutes(this.getMinutes() - this.getTimezoneOffset());
+                                return local.toJSON().slice(0,10);
+                            });
+
+                            document.getElementById('datepicker').value = new Date().toDateInputValue();
+                            document.getElementById("datepicker").hidden = false;
+                            document.getElementById('timepicker').value = new Date().toISOString().substring(11,16);
+                            document.getElementById("timepicker").hidden = false;
+                        };
+                    }
+                </script>
+            </div>
+        </div>
+    </div>
+
+</body>
+</html>

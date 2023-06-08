@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import dataclasses
 
-from django.shortcuts import render, redirect
+from django.shortcuts import render
 from django.http import JsonResponse
 from elasticsearch import Elasticsearch
 from . import data_processing
@@ -11,15 +11,28 @@ from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
 import configparser
 
-ini_path = r"chartsite.ini"
+# the chance of using ini:
+
+# ini_path = r"chartsite.ini"
+# config = configparser.ConfigParser()
+# config.read(ini_path)
+# last_date_config = configparser.ConfigParser()
+# ip = config.get('ELASTIC', 'ip')
+# port = config.get('ELASTIC', 'port')
+# login = config.get('ELASTIC', 'login')
+# password = config.get('ELASTIC', 'password')
+
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+ip = os.environ.get('ELASTIC_IP')
+port = os.environ.get('ELASTIC_PORT')
+login = os.environ.get('ELASTIC_LOGIN')
+password = os.environ.get('ELASTIC_PASSWORD')
+
 logger = logging.getLogger("mylogger")
-config = configparser.ConfigParser()
-config.read(ini_path)
-last_date_config = configparser.ConfigParser()
-ip = config.get('ELASTIC', 'ip')
-port = config.get('ELASTIC', 'port')
-login = config.get('ELASTIC', 'login')
-password = config.get('ELASTIC', 'password')
 
 
 @dataclasses.dataclass
@@ -53,14 +66,16 @@ def get_data(testings_set):
         session = row.get('testing_session_uuid')
 
         if Chart.DATA.get(id) is not None:
-            device = {'device': row.get('device'), 'device_family': row.get('device_family'),
+            device = {'device': row.get('device'),
+                      'device_family': row.get('device_family'),
                       'message': row.get('message'),
                       'time_points': row.get('@timestamp')}
             Chart.DATA[id][session] = device
         else:
-            Chart.DATA[id] = {session: {'device': row.get('device'), 'device_family': row.get('device_family'),
-                                  'message': row.get('message'),
-                                  'time_points': row.get('@timestamp')}}
+            Chart.DATA[id] = {session: {'device': row.get('device'),
+                                        'device_family': row.get('device_family'),
+                                        'message': row.get('message'),
+                                        'time_points': row.get('@timestamp')}}
 
     sort = dict(sorted(Chart.DATA.items()))
     Chart.DATA = sort
